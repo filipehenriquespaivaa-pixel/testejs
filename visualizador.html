@@ -339,13 +339,14 @@
                 // Criar SkeletonHelper para visualização
                 skeletonHelper = new THREE.SkeletonHelper(mesh);
                 skeletonHelper.material.linewidth = 3;
+                skeletonHelper.material.color.setHex(0x00ff00);
                 skeletonHelper.visible = showSkeleton;
                 scene.add(skeletonHelper);
                 
                 // Configurar animação
                 if (window.Idle_Animations) {
                     mixer = new THREE.AnimationMixer(mesh);
-                    var clips = window.Idle_Animations.clips;
+                    var clips = window.Idle_Animations.buildClips(THREE);
                     
                     if (clips && clips.length > 0) {
                         var action = mixer.clipAction(clips[0]);
