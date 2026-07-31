@@ -137,6 +137,7 @@
         <p>🔍 Scroll: Zoom</p>
         <button onclick="resetCamera()">🔄 Resetar Câmera</button>
         <button onclick="toggleAutoRotate()">⏯️ Auto Girar</button>
+        <button onclick="toggleSkeleton()" id="btn-skeleton">🦴 Mostrar Esqueleto</button>
         <hr style="margin: 10px 0; border: 1px solid #444;">
         <h3 style="color: #ff6b6b;">🎭 Animações</h3>
         <button onclick="playAnimation('mixamo.com')" id="btn-idle">😐 Idle</button>
@@ -150,9 +151,11 @@
     <script>
         // Variáveis globais
         var scene, camera, renderer, controls;
-        var mesh, skeleton, mixer;
+        var mesh, skeleton, mixer, skeletonHelper;
         var isAutoRotating = false;
+        var showSkeleton = false;
         var clock = new THREE.Clock();
+        var loadingComplete = false;
         
         // Inicializar a cena
         function init() {
@@ -208,11 +211,8 @@
             // Evento de redimensionamento
             window.addEventListener('resize', onWindowResize, false);
             
-            // Remover loading e carregar modelo
-            setTimeout(function() {
-                document.getElementById('loading').style.display = 'none';
-                loadModel();
-            }, 1000);
+            // Carregar modelo
+            loadModel();
             
             // Iniciar loop de animação
             animate();
@@ -224,23 +224,34 @@
             var skeletonScript = document.createElement('script');
             skeletonScript.src = 'skeleton-Idle-1785464568358.js';
             skeletonScript.onload = function() {
+                console.log('Skeleton carregado');
                 // Carregar modelo
                 var modelScript = document.createElement('script');
                 modelScript.src = 'modely_COMPLETO.js';
                 modelScript.onload = function() {
+                    console.log('Modelo carregado');
                     // Carregar animações
                     var animScript = document.createElement('script');
                     animScript.src = 'animations-Idle-1785464577156.js';
                     animScript.onload = function() {
+                        console.log('Animações carregadas');
                         createCharacter();
                     };
                     animScript.onerror = function() {
-                        console.log('Animações não encontradas');
+                        console.log('Animações não encontradas, continuando sem animação');
                         createCharacter();
                     };
                     document.head.appendChild(animScript);
                 };
+                modelScript.onerror = function() {
+                    document.getElementById('animStatus').textContent = 'Erro: Modelo não encontrado';
+                    document.getElementById('loading').style.display = 'none';
+                };
                 document.head.appendChild(modelScript);
+            };
+            skeletonScript.onerror = function() {
+                document.getElementById('animStatus').textContent = 'Erro: Skeleton não encontrado';
+                document.getElementById('loading').style.display = 'none';
             };
             document.head.appendChild(skeletonScript);
         }
@@ -250,6 +261,7 @@
             // Obter dados do modelo
             if (!window.VoxelSkinMesh_modely) {
                 document.getElementById('animStatus').textContent = 'Erro: Modelo não encontrado';
+                document.getElementById('loading').style.display = 'none';
                 return;
             }
             
@@ -324,6 +336,12 @@
                 mesh = skinnedMesh;
                 scene.add(mesh);
                 
+                // Criar SkeletonHelper para visualização
+                skeletonHelper = new THREE.SkeletonHelper(mesh);
+                skeletonHelper.material.linewidth = 3;
+                skeletonHelper.visible = showSkeleton;
+                scene.add(skeletonHelper);
+                
                 // Configurar animação
                 if (window.Idle_Animations) {
                     mixer = new THREE.AnimationMixer(mesh);
@@ -333,13 +351,23 @@
                         var action = mixer.clipAction(clips[0]);
                         action.play();
                         document.getElementById('animStatus').textContent = 'Reproduzindo: ' + clips[0].name;
+                    } else {
+                        document.getElementById('animStatus').textContent = 'Sem animações disponíveis';
                     }
+                } else {
+                    document.getElementById('animStatus').textContent = 'Animação carregada';
                 }
+            } else {
+                document.getElementById('animStatus').textContent = 'Modelo carregado (sem skeleton)';
             }
             
             // Atualizar informações
             document.getElementById('vertexCount').textContent = data.vertices || positions.length / 3;
             document.getElementById('triangleCount').textContent = data.triangles || (data.indices ? data.indices.length / 3 : positions.length / 9);
+            
+            // Esconder loading
+            document.getElementById('loading').style.display = 'none';
+            loadingComplete = true;
             
             adjustCameraToModel();
             console.log('Modelo carregado com sucesso!');
@@ -381,6 +409,19 @@
             controls.autoRotateSpeed = 2.0;
         }
         
+        // Alternar visualização do esqueleto
+        function toggleSkeleton() {
+            showSkeleton = !showSkeleton;
+            if (skeletonHelper) {
+                skeletonHelper.visible = showSkeleton;
+            }
+            var btn = document.getElementById('btn-skeleton');
+            if (btn) {
+                btn.textContent = showSkeleton ? '🦴 Ocultar Esqueleto' : '🦴 Mostrar Esqueleto';
+                btn.classList.toggle('active', showSkeleton);
+            }
+        }
+        
         // Lidar com redimensionamento da janela
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
@@ -400,6 +441,22 @@
             
             controls.update();
             renderer.render(scene, camera);
+        }
+        
+        // Função para tocar animação
+        function playAnimation(animName) {
+            if (!mixer || !window.Idle_Animations) {
+                document.getElementById('animStatus').textContent = 'Sem animações disponíveis';
+                return;
+            }
+            
+            var clips = window.Idle_Animations.clips;
+            if (clips && clips.length > 0) {
+                var clip = clips.find(function(c) { return c.name === animName; }) || clips[0];
+                var action = mixer.clipAction(clip);
+                action.reset().play();
+                document.getElementById('animStatus').textContent = 'Reproduzindo: ' + clip.name;
+            }
         }
         
         // Iniciar
