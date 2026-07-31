@@ -110,25 +110,8 @@
             transform: scale(1.05);
         }
         
-        #fileInput {
-            display: none;
-        }
-        
-        #fileLabel {
-            display: inline-block;
+        button.active {
             background: #ff6b6b;
-            color: white;
-            padding: 8px 16px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-            margin: 5px;
-            transition: all 0.3s ease;
-        }
-        
-        #fileLabel:hover {
-            background: #ee5a5a;
-            transform: scale(1.05);
         }
     </style>
 </head>
@@ -144,11 +127,7 @@
         <h2>🎮 Personagem 3D</h2>
         <p><strong>Vértices:</strong> <span id="vertexCount">-</span></p>
         <p><strong>Triângulos:</strong> <span id="triangleCount">-</span></p>
-        <p><strong>Material:</strong> <span id="materialName">-</span></p>
-        <div style="margin-top: 10px;">
-            <label id="fileLabel" for="fileInput">📁 Carregar Arquivo</label>
-            <input type="file" id="fileInput" accept=".js">
-        </div>
+        <p><strong>Animação:</strong> <span id="animName">Idle</span></p>
     </div>
     
     <div id="controls">
@@ -160,12 +139,8 @@
         <button onclick="toggleAutoRotate()">⏯️ Auto Girar</button>
         <hr style="margin: 10px 0; border: 1px solid #444;">
         <h3 style="color: #ff6b6b;">🎭 Animações</h3>
-        <button onclick="toggleAnimation('walk')">🚶 Caminhar</button>
-        <button onclick="toggleAnimation('jump')">🦘 Pular</button>
-        <button onclick="toggleAnimation('dance')">💃 Dançar</button>
-        <button onclick="toggleAnimation('wave')">👋 Acenar</button>
-        <button onclick="stopAllAnimations()">⏹️ Parar</button>
-        <p style="margin-top: 8px;"><strong>Status:</strong> <span id="animStatus">Nenhuma</span></p>
+        <button onclick="playAnimation('mixamo.com')" id="btn-idle">😐 Idle</button>
+        <p style="margin-top: 8px;"><strong>Status:</strong> <span id="animStatus">Carregando...</span></p>
     </div>
 
     <!-- Three.js via CDN -->
@@ -174,14 +149,10 @@
     
     <script>
         // Variáveis globais
-        var scene, camera, renderer, controls, mesh;
+        var scene, camera, renderer, controls;
+        var mesh, skeleton, mixer;
         var isAutoRotating = false;
-        
-        // Variáveis de animação
-        var currentAnimation = null;
-        var animationTime = 0;
-        var originalPositions = null;
-        var currentVertices = null;
+        var clock = new THREE.Clock();
         
         // Inicializar a cena
         function init() {
@@ -196,7 +167,7 @@
                 0.1,
                 10000
             );
-            camera.position.set(50, 30, 50);
+            camera.position.set(150, 100, 150);
             
             // Criar renderizador
             renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -237,81 +208,58 @@
             // Evento de redimensionamento
             window.addEventListener('resize', onWindowResize, false);
             
-            // Configurar input de arquivo
-            document.getElementById('fileInput').addEventListener('change', handleFileSelect, false);
-            
-            // Remover loading
+            // Remover loading e carregar modelo
             setTimeout(function() {
                 document.getElementById('loading').style.display = 'none';
-                // Carregar arquivo padrão se existir
-                loadDefaultModel();
+                loadModel();
             }, 1000);
             
             // Iniciar loop de animação
             animate();
         }
         
-        // Carregar modelo padrão
-        function loadDefaultModel() {
-            var script = document.createElement('script');
-            script.src = 'modely_COMPLETO.js';
-            script.onload = function() {
-                if (window.VoxelSkinMesh_modely) {
-                    createModelFromData(window.VoxelSkinMesh_modely.getMeshData());
-                }
+        // Carregar modelo e animação
+        function loadModel() {
+            // Carregar skeleton primeiro
+            var skeletonScript = document.createElement('script');
+            skeletonScript.src = 'skeleton-Idle-1785464568358.js';
+            skeletonScript.onload = function() {
+                // Carregar modelo
+                var modelScript = document.createElement('script');
+                modelScript.src = 'modely_COMPLETO.js';
+                modelScript.onload = function() {
+                    // Carregar animações
+                    var animScript = document.createElement('script');
+                    animScript.src = 'animations-Idle-1785464577156.js';
+                    animScript.onload = function() {
+                        createCharacter();
+                    };
+                    animScript.onerror = function() {
+                        console.log('Animações não encontradas');
+                        createCharacter();
+                    };
+                    document.head.appendChild(animScript);
+                };
+                document.head.appendChild(modelScript);
             };
-            script.onerror = function() {
-                console.log('Arquivo modelo não encontrado. Use o botão para carregar manualmente.');
-            };
-            document.head.appendChild(script);
+            document.head.appendChild(skeletonScript);
         }
         
-        // Manipular seleção de arquivo
-        function handleFileSelect(event) {
-            var file = event.target.files[0];
-            if (!file) return;
-            
-            var reader = new FileReader();
-            reader.onload = function(e) {
-                var scriptContent = e.target.result;
-                eval(scriptContent);
-                
-                // Procurar por qualquer objeto VoxelSkinMesh
-                for (var prop in window) {
-                    if (prop.indexOf('VoxelSkinMesh_') === 0 && 
-                        typeof window[prop] === 'function') {
-                        var data = window[prop].getMeshData();
-                        createModelFromData(data);
-                        break;
-                    }
-                }
-            };
-            reader.readAsText(file);
-        }
-        
-        // Criar modelo a partir dos dados
-        function createModelFromData(data) {
-            // Remover mesh anterior se existir
-            if (mesh) {
-                scene.remove(mesh);
-                mesh.geometry.dispose();
-                if (mesh.material instanceof Array) {
-                    for (var i = 0; i < mesh.material.length; i++) {
-                        mesh.material[i].dispose();
-                    }
-                } else {
-                    mesh.material.dispose();
-                }
+        // Criar personagem com skeleton e animação
+        function createCharacter() {
+            // Obter dados do modelo
+            if (!window.VoxelSkinMesh_modely) {
+                document.getElementById('animStatus').textContent = 'Erro: Modelo não encontrado';
+                return;
             }
+            
+            var data = window.VoxelSkinMesh_modely.getMeshData();
             
             // Criar geometria
             var geometry = new THREE.BufferGeometry();
-            
-            // Adicionar posições
             var positions = new Float32Array(data.positions);
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             
-            // Adicionar normais se existirem
             if (data.normals && data.normals.length > 0) {
                 var normals = new Float32Array(data.normals);
                 geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
@@ -319,14 +267,13 @@
                 geometry.computeVertexNormals();
             }
             
-            // Adicionar índices
             if (data.indices && data.indices.length > 0) {
                 var indices = new Uint32Array(data.indices);
                 geometry.setIndex(new THREE.BufferAttribute(indices, 1));
             }
             
             // Obter cor do material
-            var color = 0x4ecdc4; // cor padrão
+            var color = 0x4ecdc4;
             if (data.materials && data.materials.length > 0) {
                 var matColor = data.materials[0].color;
                 color = new THREE.Color(matColor);
@@ -352,24 +299,49 @@
             geometry.boundingBox.getCenter(center);
             mesh.position.sub(center);
             
-            // Ajustar posição Y para ficar sobre o grid
             geometry.computeBoundingBox();
             var minY = geometry.boundingBox.min.y;
             mesh.position.y -= minY;
             
             scene.add(mesh);
             
+            // Criar skeleton
+            if (window.Idle_Skeleton) {
+                var rig = window.Idle_Skeleton.buildBones(THREE);
+                skeleton = rig.roots[0];
+                
+                // Adicionar skeleton à cena
+                scene.add(skeleton);
+                
+                // Criar SkinnedMesh
+                var skinnedMesh = new THREE.SkinnedMesh(geometry, material);
+                skinnedMesh.bind(new THREE.Skeleton(rig.bones));
+                skinnedMesh.castShadow = true;
+                skinnedMesh.receiveShadow = true;
+                skinnedMesh.position.copy(mesh.position);
+                
+                scene.remove(mesh);
+                mesh = skinnedMesh;
+                scene.add(mesh);
+                
+                // Configurar animação
+                if (window.Idle_Animations) {
+                    mixer = new THREE.AnimationMixer(mesh);
+                    var clips = window.Idle_Animations.clips;
+                    
+                    if (clips && clips.length > 0) {
+                        var action = mixer.clipAction(clips[0]);
+                        action.play();
+                        document.getElementById('animStatus').textContent = 'Reproduzindo: ' + clips[0].name;
+                    }
+                }
+            }
+            
             // Atualizar informações
             document.getElementById('vertexCount').textContent = data.vertices || positions.length / 3;
             document.getElementById('triangleCount').textContent = data.triangles || (data.indices ? data.indices.length / 3 : positions.length / 9);
-            document.getElementById('materialName').textContent = data.materials && data.materials.length > 0 ? data.materials[0].name : 'Padrão';
             
-            // Armazenar posições originais para animação
-            storeOriginalPositions();
-            
-            // Ajustar câmera para enquadrar o modelo
             adjustCameraToModel();
-            
             console.log('Modelo carregado com sucesso!');
         }
         
@@ -395,7 +367,7 @@
             if (mesh) {
                 adjustCameraToModel();
             } else {
-                camera.position.set(50, 30, 50);
+                camera.position.set(150, 100, 150);
                 camera.lookAt(0, 0, 0);
                 controls.target.set(0, 0, 0);
                 controls.update();
@@ -416,211 +388,22 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
         
-        // Funções de animação do personagem
-        function storeOriginalPositions() {
-            if (mesh && mesh.geometry) {
-                var positions = mesh.geometry.attributes.position.array;
-                originalPositions = new Float32Array(positions.length);
-                for (var i = 0; i < positions.length; i++) {
-                    originalPositions[i] = positions[i];
-                }
-                currentVertices = positions.length / 3;
-            }
-        }
-        
-        // Animação de caminhar
-        function animateWalk(time) {
-            var positions = mesh.geometry.attributes.position.array;
-            var speed = 3;
-            
-            for (var i = 0; i < currentVertices; i++) {
-                var ix = i * 3;
-                var iy = i * 3 + 1;
-                var iz = i * 3 + 2;
-                
-                var x = originalPositions[ix];
-                var y = originalPositions[iy];
-                var z = originalPositions[iz];
-                
-                // Determinar parte do corpo baseada na posição Y
-                var legFactor = Math.max(0, Math.min(1, (10 - y) / 5));
-                var armFactor = Math.max(0, Math.min(1, (15 - y) / 8));
-                var bodyFactor = Math.max(0, Math.min(1, (20 - y) / 10));
-                
-                // Movimento das pernas
-                positions[ix] = x + Math.sin(time * speed + x * 0.1) * legFactor * 2;
-                positions[iy] = originalPositions[iy] + Math.abs(Math.sin(time * speed * 2 + x * 0.1)) * legFactor * 1.5;
-                
-                // Movimento dos braços
-                positions[ix] += Math.sin(time * speed + Math.PI + x * 0.1) * armFactor * 1.5;
-                
-                // Suave movimento do corpo
-                positions[iy] += Math.sin(time * speed * 2) * bodyFactor * 0.5;
-            }
-            
-            mesh.geometry.attributes.position.needsUpdate = true;
-        }
-        
-        // Animação de pular
-        function animateJump(time) {
-            var positions = mesh.geometry.attributes.position.array;
-            var jumpHeight = Math.abs(Math.sin(time * 5)) * 8;
-            
-            for (var i = 0; i < currentVertices; i++) {
-                var ix = i * 3;
-                var iy = i * 3 + 1;
-                var iz = i * 3 + 2;
-                
-                var y = originalPositions[iy];
-                var legFactor = Math.max(0, Math.min(1, (8 - y) / 4));
-                
-                // Pulo inteiro
-                positions[iy] = originalPositions[iy] + jumpHeight;
-                
-                // Encolher pernas no ar
-                if (jumpHeight > 3) {
-                    positions[iy] -= legFactor * Math.abs(Math.sin(time * 10)) * 2;
-                }
-            }
-            
-            mesh.geometry.attributes.position.needsUpdate = true;
-        }
-        
-        // Animação de dançar
-        function animateDance(time) {
-            var positions = mesh.geometry.attributes.position.array;
-            
-            for (var i = 0; i < currentVertices; i++) {
-                var ix = i * 3;
-                var iy = i * 3 + 1;
-                var iz = i * 3 + 2;
-                
-                var x = originalPositions[ix];
-                var y = originalPositions[iy];
-                var z = originalPositions[iz];
-                
-                var bodyFactor = Math.max(0, Math.min(1, (20 - y) / 10));
-                var legFactor = Math.max(0, Math.min(1, (10 - y) / 5));
-                var armFactor = Math.max(0, Math.min(1, (15 - y) / 8));
-                
-                // Movimento lateral do corpo
-                positions[ix] = x + Math.sin(time * 4) * bodyFactor * 3;
-                
-                // Quadris
-                positions[iz] = z + Math.cos(time * 4) * legFactor * 2;
-                
-                // Braços para cima e para baixo
-                positions[iy] = originalPositions[iy] + Math.sin(time * 8) * armFactor * 3;
-                positions[ix] += Math.sin(time * 8 + Math.PI/2) * armFactor * 2;
-                
-                // Cabeça balançando
-                if (y > 18) {
-                    positions[ix] += Math.sin(time * 6) * 0.5;
-                }
-            }
-            
-            mesh.geometry.attributes.position.needsUpdate = true;
-        }
-        
-        // Animação de acenar
-        function animateWave(time) {
-            var positions = mesh.geometry.attributes.position.array;
-            
-            for (var i = 0; i < currentVertices; i++) {
-                var ix = i * 3;
-                var iy = i * 3 + 1;
-                var iz = i * 3 + 2;
-                
-                var x = originalPositions[ix];
-                var y = originalPositions[iy];
-                var z = originalPositions[iz];
-                
-                // Detectar braço direito (x positivo, altura média)
-                var rightArm = (x > 5 && y > 8 && y < 16);
-                var leftArm = (x < -5 && y > 8 && y < 16);
-                
-                if (rightArm) {
-                    // Acenar com braço direito
-                    var waveHeight = Math.sin(time * 10) * 2;
-                    var waveSide = Math.cos(time * 10) * 1.5;
-                    positions[iy] = originalPositions[iy] + waveHeight * ((y - 8) / 8);
-                    positions[ix] = originalPositions[ix] + waveSide * ((y - 8) / 8);
-                }
-                
-                // Leve balanço do corpo
-                var bodyFactor = Math.max(0, Math.min(1, (20 - y) / 10));
-                positions[ix] += Math.sin(time * 3) * bodyFactor * 0.5;
-            }
-            
-            mesh.geometry.attributes.position.needsUpdate = true;
-        }
-        
-        // Alternar animação
-        function toggleAnimation(animType) {
-            if (!mesh) {
-                alert('Carregue um modelo primeiro!');
-                return;
-            }
-            
-            if (!originalPositions) {
-                storeOriginalPositions();
-            }
-            
-            if (currentAnimation === animType) {
-                currentAnimation = null;
-                document.getElementById('animStatus').textContent = 'Nenhuma';
-            } else {
-                currentAnimation = animType;
-                animationTime = 0;
-                var names = { 'walk': '🚶 Caminhando', 'jump': '🦘 Pulando', 'dance': '💃 Dançando', 'wave': '👋 Acenando' };
-                document.getElementById('animStatus').textContent = names[animType] || animType;
-            }
-        }
-        
-        // Parar todas as animações
-        function stopAllAnimations() {
-            currentAnimation = null;
-            document.getElementById('animStatus').textContent = 'Nenhuma';
-            
-            if (mesh && originalPositions) {
-                var positions = mesh.geometry.attributes.position.array;
-                for (var i = 0; i < positions.length; i++) {
-                    positions[i] = originalPositions[i];
-                }
-                mesh.geometry.attributes.position.needsUpdate = true;
-            }
-        }
-        
         // Loop de animação
         function animate() {
             requestAnimationFrame(animate);
             
-            // Atualizar tempo de animação
-            if (currentAnimation) {
-                animationTime += 0.016;
-                
-                switch(currentAnimation) {
-                    case 'walk':
-                        animateWalk(animationTime);
-                        break;
-                    case 'jump':
-                        animateJump(animationTime);
-                        break;
-                    case 'dance':
-                        animateDance(animationTime);
-                        break;
-                    case 'wave':
-                        animateWave(animationTime);
-                        break;
-                }
+            var delta = clock.getDelta();
+            
+            if (mixer) {
+                mixer.update(delta);
             }
             
             controls.update();
             renderer.render(scene, camera);
         }
         
-        // Iniciar quando a página carregar
-        window.addEventListener('load', init, false);
+        // Iniciar
+        init();
     </script>
 </body>
 </html>
