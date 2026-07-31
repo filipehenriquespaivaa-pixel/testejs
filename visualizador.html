@@ -158,6 +158,14 @@
         <p>🔍 Scroll: Zoom</p>
         <button onclick="resetCamera()">🔄 Resetar Câmera</button>
         <button onclick="toggleAutoRotate()">⏯️ Auto Girar</button>
+        <hr style="margin: 10px 0; border: 1px solid #444;">
+        <h3 style="color: #ff6b6b;">🎭 Animações</h3>
+        <button onclick="toggleAnimation('walk')">🚶 Caminhar</button>
+        <button onclick="toggleAnimation('jump')">🦘 Pular</button>
+        <button onclick="toggleAnimation('dance')">💃 Dançar</button>
+        <button onclick="toggleAnimation('wave')">👋 Acenar</button>
+        <button onclick="stopAllAnimations()">⏹️ Parar</button>
+        <p style="margin-top: 8px;"><strong>Status:</strong> <span id="animStatus">Nenhuma</span></p>
     </div>
 
     <!-- Three.js via CDN -->
@@ -168,6 +176,12 @@
         // Variáveis globais
         var scene, camera, renderer, controls, mesh;
         var isAutoRotating = false;
+        
+        // Variáveis de animação
+        var currentAnimation = null;
+        var animationTime = 0;
+        var originalPositions = null;
+        var currentVertices = null;
         
         // Inicializar a cena
         function init() {
@@ -350,6 +364,9 @@
             document.getElementById('triangleCount').textContent = data.triangles || (data.indices ? data.indices.length / 3 : positions.length / 9);
             document.getElementById('materialName').textContent = data.materials && data.materials.length > 0 ? data.materials[0].name : 'Padrão';
             
+            // Armazenar posições originais para animação
+            storeOriginalPositions();
+            
             // Ajustar câmera para enquadrar o modelo
             adjustCameraToModel();
             
@@ -399,9 +416,205 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
         
+        // Funções de animação do personagem
+        function storeOriginalPositions() {
+            if (mesh && mesh.geometry) {
+                var positions = mesh.geometry.attributes.position.array;
+                originalPositions = new Float32Array(positions.length);
+                for (var i = 0; i < positions.length; i++) {
+                    originalPositions[i] = positions[i];
+                }
+                currentVertices = positions.length / 3;
+            }
+        }
+        
+        // Animação de caminhar
+        function animateWalk(time) {
+            var positions = mesh.geometry.attributes.position.array;
+            var speed = 3;
+            
+            for (var i = 0; i < currentVertices; i++) {
+                var ix = i * 3;
+                var iy = i * 3 + 1;
+                var iz = i * 3 + 2;
+                
+                var x = originalPositions[ix];
+                var y = originalPositions[iy];
+                var z = originalPositions[iz];
+                
+                // Determinar parte do corpo baseada na posição Y
+                var legFactor = Math.max(0, Math.min(1, (10 - y) / 5));
+                var armFactor = Math.max(0, Math.min(1, (15 - y) / 8));
+                var bodyFactor = Math.max(0, Math.min(1, (20 - y) / 10));
+                
+                // Movimento das pernas
+                positions[ix] = x + Math.sin(time * speed + x * 0.1) * legFactor * 2;
+                positions[iy] = originalPositions[iy] + Math.abs(Math.sin(time * speed * 2 + x * 0.1)) * legFactor * 1.5;
+                
+                // Movimento dos braços
+                positions[ix] += Math.sin(time * speed + Math.PI + x * 0.1) * armFactor * 1.5;
+                
+                // Suave movimento do corpo
+                positions[iy] += Math.sin(time * speed * 2) * bodyFactor * 0.5;
+            }
+            
+            mesh.geometry.attributes.position.needsUpdate = true;
+        }
+        
+        // Animação de pular
+        function animateJump(time) {
+            var positions = mesh.geometry.attributes.position.array;
+            var jumpHeight = Math.abs(Math.sin(time * 5)) * 8;
+            
+            for (var i = 0; i < currentVertices; i++) {
+                var ix = i * 3;
+                var iy = i * 3 + 1;
+                var iz = i * 3 + 2;
+                
+                var y = originalPositions[iy];
+                var legFactor = Math.max(0, Math.min(1, (8 - y) / 4));
+                
+                // Pulo inteiro
+                positions[iy] = originalPositions[iy] + jumpHeight;
+                
+                // Encolher pernas no ar
+                if (jumpHeight > 3) {
+                    positions[iy] -= legFactor * Math.abs(Math.sin(time * 10)) * 2;
+                }
+            }
+            
+            mesh.geometry.attributes.position.needsUpdate = true;
+        }
+        
+        // Animação de dançar
+        function animateDance(time) {
+            var positions = mesh.geometry.attributes.position.array;
+            
+            for (var i = 0; i < currentVertices; i++) {
+                var ix = i * 3;
+                var iy = i * 3 + 1;
+                var iz = i * 3 + 2;
+                
+                var x = originalPositions[ix];
+                var y = originalPositions[iy];
+                var z = originalPositions[iz];
+                
+                var bodyFactor = Math.max(0, Math.min(1, (20 - y) / 10));
+                var legFactor = Math.max(0, Math.min(1, (10 - y) / 5));
+                var armFactor = Math.max(0, Math.min(1, (15 - y) / 8));
+                
+                // Movimento lateral do corpo
+                positions[ix] = x + Math.sin(time * 4) * bodyFactor * 3;
+                
+                // Quadris
+                positions[iz] = z + Math.cos(time * 4) * legFactor * 2;
+                
+                // Braços para cima e para baixo
+                positions[iy] = originalPositions[iy] + Math.sin(time * 8) * armFactor * 3;
+                positions[ix] += Math.sin(time * 8 + Math.PI/2) * armFactor * 2;
+                
+                // Cabeça balançando
+                if (y > 18) {
+                    positions[ix] += Math.sin(time * 6) * 0.5;
+                }
+            }
+            
+            mesh.geometry.attributes.position.needsUpdate = true;
+        }
+        
+        // Animação de acenar
+        function animateWave(time) {
+            var positions = mesh.geometry.attributes.position.array;
+            
+            for (var i = 0; i < currentVertices; i++) {
+                var ix = i * 3;
+                var iy = i * 3 + 1;
+                var iz = i * 3 + 2;
+                
+                var x = originalPositions[ix];
+                var y = originalPositions[iy];
+                var z = originalPositions[iz];
+                
+                // Detectar braço direito (x positivo, altura média)
+                var rightArm = (x > 5 && y > 8 && y < 16);
+                var leftArm = (x < -5 && y > 8 && y < 16);
+                
+                if (rightArm) {
+                    // Acenar com braço direito
+                    var waveHeight = Math.sin(time * 10) * 2;
+                    var waveSide = Math.cos(time * 10) * 1.5;
+                    positions[iy] = originalPositions[iy] + waveHeight * ((y - 8) / 8);
+                    positions[ix] = originalPositions[ix] + waveSide * ((y - 8) / 8);
+                }
+                
+                // Leve balanço do corpo
+                var bodyFactor = Math.max(0, Math.min(1, (20 - y) / 10));
+                positions[ix] += Math.sin(time * 3) * bodyFactor * 0.5;
+            }
+            
+            mesh.geometry.attributes.position.needsUpdate = true;
+        }
+        
+        // Alternar animação
+        function toggleAnimation(animType) {
+            if (!mesh) {
+                alert('Carregue um modelo primeiro!');
+                return;
+            }
+            
+            if (!originalPositions) {
+                storeOriginalPositions();
+            }
+            
+            if (currentAnimation === animType) {
+                currentAnimation = null;
+                document.getElementById('animStatus').textContent = 'Nenhuma';
+            } else {
+                currentAnimation = animType;
+                animationTime = 0;
+                var names = { 'walk': '🚶 Caminhando', 'jump': '🦘 Pulando', 'dance': '💃 Dançando', 'wave': '👋 Acenando' };
+                document.getElementById('animStatus').textContent = names[animType] || animType;
+            }
+        }
+        
+        // Parar todas as animações
+        function stopAllAnimations() {
+            currentAnimation = null;
+            document.getElementById('animStatus').textContent = 'Nenhuma';
+            
+            if (mesh && originalPositions) {
+                var positions = mesh.geometry.attributes.position.array;
+                for (var i = 0; i < positions.length; i++) {
+                    positions[i] = originalPositions[i];
+                }
+                mesh.geometry.attributes.position.needsUpdate = true;
+            }
+        }
+        
         // Loop de animação
         function animate() {
             requestAnimationFrame(animate);
+            
+            // Atualizar tempo de animação
+            if (currentAnimation) {
+                animationTime += 0.016;
+                
+                switch(currentAnimation) {
+                    case 'walk':
+                        animateWalk(animationTime);
+                        break;
+                    case 'jump':
+                        animateJump(animationTime);
+                        break;
+                    case 'dance':
+                        animateDance(animationTime);
+                        break;
+                    case 'wave':
+                        animateWave(animationTime);
+                        break;
+                }
+            }
+            
             controls.update();
             renderer.render(scene, camera);
         }
