@@ -338,9 +338,9 @@
                 
                 // Criar SkeletonHelper para visualização
                 skeletonHelper = new THREE.SkeletonHelper(mesh);
-                skeletonHelper.material.linewidth = 3;
                 skeletonHelper.material.color.setHex(0x00ff00);
-                skeletonHelper.visible = showSkeleton;
+                skeletonHelper.material.linewidth = 5;
+                skeletonHelper.visible = false;
                 scene.add(skeletonHelper);
                 
                 // Configurar animação
@@ -415,6 +415,9 @@
             showSkeleton = !showSkeleton;
             if (skeletonHelper) {
                 skeletonHelper.visible = showSkeleton;
+                // Garantir cor verde brilhante
+                skeletonHelper.material.color.setHex(0x00ff00);
+                skeletonHelper.material.linewidth = 5;
             }
             var btn = document.getElementById('btn-skeleton');
             if (btn) {
